@@ -10,7 +10,8 @@ and pick the appropriate release branch.
 
 **Features**:
 
-- Multi-Perspective Issuance Corroboration (MPIC) coordination core (CA/Browser Forum BR 3.2.2.9). Adds a perspective/quorum/coordinator layer for corroborating `http-01`/`dns-01`/`tls-alpn-01` across multiple network perspectives, gated behind the new `mpic_enabled` option (default `False`, no behaviour change). Remote perspectives are wired in follow-up changes. See [docs/mpic.md](docs/mpic.md).
+- Multi-Perspective Issuance Corroboration (MPIC) coordination core (CA/Browser Forum BR 3.2.2.9). Adds a perspective/quorum/coordinator layer for corroborating `http-01`/`dns-01`/`tls-alpn-01` across multiple network perspectives, gated behind the new `mpic_enabled` option (default `False`, no behaviour change). See [docs/mpic.md](docs/mpic.md).
+- MPIC remote-agent client: `RemoteAgentPerspective` delegates validation to self-hosted agents over mutual TLS. New `mpic_perspectives` (JSON list of agents) plus `mpic_client_cert`/`mpic_client_key`/`mpic_ca_bundle` options. The agent service is added in a follow-up change.
 
 ## Changes in 0.45.3
 

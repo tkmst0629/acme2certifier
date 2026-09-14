@@ -88,6 +88,10 @@ class ChallengeConfiguration:
     mpic_enforcement: str = "enforce"  # "monitor" | "enforce"
     mpic_min_remote_perspectives: int = 3
     mpic_perspective_timeout: int = 10
+    mpic_perspectives: Optional[List[Dict[str, str]]] = None
+    mpic_client_cert: Optional[str] = None
+    mpic_client_key: Optional[str] = None
+    mpic_ca_bundle: Optional[str] = None
 
 
 class DatabaseChallengeRepository(ChallengeRepository):
@@ -858,6 +862,35 @@ class Challenge:
                 "Failed to parse mpic_perspective_timeout from configuration: %s",
                 err_,
             )
+
+        self._load_mpic_perspectives(config_dic)
+
+    def _load_mpic_perspectives(self, config_dic: ConfigParser):
+        """Load the remote perspective list and mTLS credentials for MPIC."""
+        if "mpic_perspectives" in config_dic["Challenge"]:
+            try:
+                perspectives = json.loads(config_dic["Challenge"]["mpic_perspectives"])
+                if isinstance(perspectives, list):
+                    self.config.mpic_perspectives = perspectives
+                else:
+                    self.logger.warning(
+                        "mpic_perspectives must be a JSON array, got: %s",
+                        type(perspectives).__name__,
+                    )
+            except Exception as err_:
+                self.logger.warning(
+                    "Failed to parse mpic_perspectives from configuration: %s", err_
+                )
+
+        self.config.mpic_client_cert = config_dic.get(
+            "Challenge", "mpic_client_cert", fallback=None
+        )
+        self.config.mpic_client_key = config_dic.get(
+            "Challenge", "mpic_client_key", fallback=None
+        )
+        self.config.mpic_ca_bundle = config_dic.get(
+            "Challenge", "mpic_ca_bundle", fallback=None
+        )
 
     def _load_directory_caa_identities(self, config_dic: ConfigParser) -> List[str]:
         """Load caaIdentities from Directory section as fallback issuer list."""

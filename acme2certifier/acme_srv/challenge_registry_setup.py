@@ -19,6 +19,7 @@ from .challenge_validators import (
     MpicCoordinator,
     QuorumPolicy,
     EnforcementMode,
+    build_remote_perspectives,
 )
 
 # Challenge types eligible for Multi-Perspective Issuance Corroboration.
@@ -79,10 +80,10 @@ def _enable_mpic(
 ) -> None:
     """Attach an MPIC coordinator to the registry based on configuration.
 
-    Remote perspectives are wired in a later change; with none configured the
-    coordinator runs the Primary perspective only, which fails the quorum in
-    'enforce' mode (as it must -- MPIC requires remote perspectives) and logs
-    without blocking in 'monitor' mode.
+    Remote perspectives are built from ``config.mpic_perspectives``. With none
+    configured the coordinator runs the Primary perspective only, which fails
+    the quorum in 'enforce' mode (as it must -- MPIC requires remote
+    perspectives) and logs without blocking in 'monitor' mode.
     """
     logger.debug("challenge_registry_setup._enable_mpic()")
     try:
@@ -94,17 +95,20 @@ def _enable_mpic(
         min_remote_perspectives=getattr(config, "mpic_min_remote_perspectives", 3),
         enforcement=enforcement,
     )
+    remote_perspectives = build_remote_perspectives(logger, config)
     coordinator = MpicCoordinator(
         logger,
         policy=policy,
-        remote_perspectives=[],  # populated in a later change (PR2)
+        remote_perspectives=remote_perspectives,
         perspective_timeout=getattr(config, "mpic_perspective_timeout", 10),
     )
     registry.enable_mpic(coordinator, MPIC_CHALLENGE_TYPES)
     logger.info(
-        "MPIC enabled (enforcement=%s, min_remote_perspectives=%d) for: %s",
+        "MPIC enabled (enforcement=%s, min_remote_perspectives=%d, "
+        "remote_perspectives=%d) for: %s",
         enforcement.value,
         policy.min_remote_perspectives,
+        len(remote_perspectives),
         ", ".join(MPIC_CHALLENGE_TYPES),
     )
 

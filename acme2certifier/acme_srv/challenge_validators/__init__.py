@@ -42,6 +42,8 @@ from .mpic import (
     EnforcementMode,
     LocalPerspective,
     RemotePerspective,
+    RemoteAgentPerspective,
+    build_remote_perspectives,
     PerspectiveMetadata,
     PerspectiveResult,
 )
@@ -70,6 +72,8 @@ __all__ = [
     "EnforcementMode",
     "LocalPerspective",
     "RemotePerspective",
+    "RemoteAgentPerspective",
+    "build_remote_perspectives",
     "PerspectiveMetadata",
     "PerspectiveResult",
 ]

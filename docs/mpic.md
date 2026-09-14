@@ -5,12 +5,18 @@
 > Status: method 3a — self-hosted distributed perspectives.
 > Tracking branch: `feature/dns-multi-perspective-validation`.
 >
-> Implemented so far (PR1 — coordination core): `RemotePerspective` /
-> `LocalPerspective`, `QuorumPolicy`, `MpicCoordinator`, and registry routing,
-> all gated behind `mpic_enabled` (default `False`, i.e. a no-op). Remote
-> perspective clients (PR2) and the agent service (PR3) are not yet present, so
-> enabling MPIC in `enforce` mode currently fails the quorum by design (no
-> remote perspectives); use `monitor` mode until PR2 lands.
+> Implemented so far:
+>
+> * PR1 — coordination core: `RemotePerspective` / `LocalPerspective`,
+>   `QuorumPolicy`, `MpicCoordinator`, and registry routing, gated behind
+>   `mpic_enabled` (default `False`, i.e. a no-op).
+> * PR2 — remote-agent client: `RemoteAgentPerspective` (mTLS HTTP client), the
+>   shared wire protocol (`protocol.py`), config parsing for `mpic_perspectives`
+>   and the mTLS credentials, and perspective-set construction.
+>
+> The agent *service* that answers `POST /mpic/validate` (PR3) is not yet
+> present. Configure `mpic_perspectives` pointing at agents once PR3 is
+> deployed; until then run in `monitor` mode.
 
 ## 1. Goal
 
