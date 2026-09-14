@@ -297,10 +297,9 @@ responsibility. `1` (default) disables the check; set `2`+ for real MPIC.
 - The software cannot verify physical 500 km separation or true AS diversity;
   it records declared metadata and enforces the policy on that metadata.
   Correct placement is an operator responsibility.
-- CAA multi-perspective checking is implemented (section 10) but is **not yet
-  wired into the issuance flow** — it is a component plus an API the operator
-  calls. acme2certifier historically does not perform CAA checking at all
-  (that is the issuing CA's duty); this matters only when a2c *is* the CA.
+- CAA checking matters only when acme2certifier *is* the issuing CA — otherwise
+  the backend CA performs it and owns the MPIC-for-CAA duty. It is therefore
+  off by default (`mpic_caa_check`).
 
 ## 9. Delivery plan (PR breakdown)
 
@@ -321,6 +320,8 @@ responsibility. `1` (default) disables the check; set `2`+ for real MPIC.
    whole corroboration to an Open MPIC-compatible `POST /mpic` service, selected
    via `mpic_provider: open_mpic` (see section 6.1).
 6. **PR6 — CAA corroboration.** `CaaChecker` + `CaaCorroborator` (section 10).
+7. **PR7 — CAA at order finalize.** `mpic_caa_check` gates enrollment on the
+   corroborated CAA decision (section 10.1).
 
 ## 10. CAA corroboration
 
@@ -353,7 +354,41 @@ CaaCorroborator.corroborate(identifier, issuer_identities, ...)
   resolver can never produce a false allow. DNSSEC validation is delegated to
   the resolver.
 
-Usage (the component is deliberately *not* wired into the issuance flow yet):
+### 10.1 Wiring into issuance
+
+The check runs at **order finalize**, after the authorizations are confirmed
+valid and immediately before enrollment (`Order._finalize_ready_order`). Every
+`dns` identifier of the order is corroborated; `ip`/`email`/`tnauthlist`
+identifiers are skipped because CAA is defined for dNSNames. On refusal the
+order is marked `invalid` and finalize answers `403` with
+`urn:ietf:params:acme:error:caa`.
+
+It **fails closed**: if the check is enabled but cannot be carried out (no
+corroborator, identifiers unreadable, or the corroboration raises), issuance is
+refused rather than allowed.
+
+```ini
+[Order]
+mpic_caa_check: True          # run the CAA check at finalize (default False)
+
+[Directory]
+caaidentities: ["ca.example"] # the CA's own CAA identity/identities
+
+[Challenge]
+mpic_enabled: True            # plus the MPIC settings from section 6
+```
+
+`mpic_caa_check` reuses the `[Challenge]` MPIC settings, so CAA is corroborated
+by the same agents (which serve the `caa` check type) or the same external
+service as DCV. With `mpic_enabled: False` the check still runs, but from a
+single perspective only (a warning is logged).
+
+The ACME account URI is derived as `<server_name>/acme/acct/<account>` and
+passed as the RFC 8657 `accounturi`.
+
+### 10.2 Calling it directly
+
+The corroborator is also usable on its own:
 
 ```python
 from acme2certifier.acme_srv.challenge_validators.mpic import build_caa_corroborator
@@ -369,8 +404,3 @@ result = corroborator.corroborate(
 if not result.success:
     raise RuntimeError("CAA forbids issuance")
 ```
-
-No new configuration is required: `build_caa_corroborator` reuses
-`mpic_provider` and the perspective/provider settings, so CAA is corroborated by
-the same agents (which serve the `caa` check type) or the same external service
-as DCV.

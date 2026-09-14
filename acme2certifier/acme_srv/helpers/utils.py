@@ -18,6 +18,7 @@ def error_dic_get(logger: logging.Logger) -> Dict[str, str]:
         "badcsr": "urn:ietf:params:acme:error:badCSR",
         "badpubkey": "urn:ietf:params:acme:error:badPublicKey",
         "badrevocationreason": "urn:ietf:params:acme:error:badRevocationReason",
+        "caa": "urn:ietf:params:acme:error:caa",
         "externalaccountrequired": "urn:ietf:params:acme:error:externalAccountRequired",
         "invalidcontact": "urn:ietf:params:acme:error:invalidContact",
         "invalidprofile": "urn:ietf:params:acme:error:invalidProfile",

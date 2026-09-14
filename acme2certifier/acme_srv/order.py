@@ -37,7 +37,14 @@ from acme2certifier.acme_srv.helpers.resource_ownership import (
     ownership_unauthorized,
     resource_owner_matches,
 )
+from acme2certifier.acme_srv.challenge_validators.mpic import (
+    build_caa_corroborator,
+    caaidentities_load,
+    mpic_config_load,
+)
 from acme2certifier.acme_srv.message import Message
+
+ACCOUNT_URI_PREFIX = "/acme/acct/"
 
 
 class OrderDatabaseError(Exception):
@@ -200,6 +207,9 @@ class OrderConfiguration:
     dryrun_profilename: Optional[str] = None
     wildcard_certificate_disable: bool = False
     ca_error_details_forward: bool = False
+    # multi-perspective CAA check at finalize (see docs/mpic.md)
+    mpic_caa_check: bool = False
+    caaidentities: List[str] = field(default_factory=list)
 
 
 class Order(object):
@@ -222,6 +232,7 @@ class Order(object):
         self.repository = OrderRepository(self.dbstore, self.logger)
         self.message = Message(self.debug, self.server_name, self.logger)
         self.error_msg_dic = error_dic_get(self.logger)
+        self.caa_corroborator = None
 
     def __enter__(self) -> "Order":
         """Enter the context manager, loading configuration."""
@@ -762,7 +773,38 @@ class Order(object):
 
         self.config.profile_mapping_field = self._load_profile_mapping_field(config_dic)
 
+        self._load_caa_config(config_dic)
+
         self.logger.debug("Order._load_configuration() ended.")
+
+    def _load_caa_config(self, config_dic: Dict[str, str]) -> None:
+        """Load the multi-perspective CAA check configuration.
+
+        ``[Order] mpic_caa_check`` turns the check on; it reuses the MPIC
+        settings from the ``[Challenge]`` section and the CA's own identities
+        from ``[Directory] caaidentities``.
+        """
+        self.logger.debug("Order._load_caa_config()")
+        self.config.mpic_caa_check = config_dic.getboolean(
+            "Order", "mpic_caa_check", fallback=False
+        )
+        if not self.config.mpic_caa_check:
+            return
+
+        self.config.caaidentities = caaidentities_load(self.logger, config_dic)
+        if not self.config.caaidentities:
+            self.logger.warning(
+                "mpic_caa_check is enabled but Directory.caaidentities is empty; "
+                "every CAA record set naming an issuer will forbid issuance."
+            )
+
+        mpic_cfg = mpic_config_load(self.logger, config_dic)
+        if not mpic_cfg.mpic_enabled:
+            self.logger.warning(
+                "mpic_caa_check is enabled but mpic_enabled is False; the CAA "
+                "check will run from a single perspective only."
+            )
+        self.caa_corroborator = build_caa_corroborator(self.logger, mpic_cfg)
 
     def _load_profile_mapping_field(self, config_dic: Dict[str, str]) -> Optional[str]:
         """Load profile mapping field from configuration."""
@@ -1355,7 +1397,89 @@ class Order(object):
                 None,
             )
 
+        caa_detail = self._caa_check(order_name)
+        if caa_detail:
+            self.logger.warning(
+                "Order finalize failed: CAA forbids issuance order=%s detail=%s",
+                order_name,
+                caa_detail,
+            )
+            try:
+                self.repository.order_update({"name": order_name, "status": "invalid"})
+            except OrderDatabaseError:
+                pass
+            return (403, self.error_msg_dic["caa"], caa_detail, None)
+
         return self._finalize_csr(order_name, payload, header)
+
+    def _order_identifiers_get(self, order_name: str) -> List[Dict[str, str]]:
+        """Return the order's identifier list (empty on lookup/parse failure)."""
+        try:
+            order_dic = self.repository.order_lookup(
+                "name", order_name, ["identifiers"]
+            )
+        except OrderDatabaseError:
+            return []
+        if not order_dic or not order_dic.get("identifiers"):
+            return []
+        try:
+            identifiers = json.loads(order_dic["identifiers"])
+        except Exception as err_:
+            self.logger.warning(
+                "Failed to parse identifiers for order %s: %s", order_name, err_
+            )
+            return []
+        return identifiers if isinstance(identifiers, list) else []
+
+    def _caa_account_uri(self, order_name: str) -> Optional[str]:
+        """Build the ACME account URI used for RFC 8657 accounturi matching."""
+        account_name = self._get_order_account_name(order_name)
+        if not account_name or not self.server_name:
+            return None
+        return f"{self.server_name}{ACCOUNT_URI_PREFIX}{account_name}"
+
+    def _caa_check(self, order_name: str) -> Optional[str]:
+        """Run the multi-perspective CAA check for every DNS identifier.
+
+        Returns ``None`` when issuance may proceed, otherwise a detail string
+        describing why CAA forbids it. Fails closed: if the check is enabled but
+        cannot be carried out, issuance is refused.
+        """
+        if not self.config.mpic_caa_check:
+            return None
+
+        self.logger.debug("Order._caa_check(%s)", order_name)
+        if not self.caa_corroborator:
+            return "CAA check is enabled but not initialized"
+
+        identifiers = self._order_identifiers_get(order_name)
+        if not identifiers:
+            return "CAA check could not determine the order identifiers"
+
+        account_uri = self._caa_account_uri(order_name)
+        for identifier in identifiers:
+            if not isinstance(identifier, dict):
+                continue
+            if (identifier.get("type") or "").lower() != "dns":
+                # CAA is defined for dNSName identifiers only
+                continue
+            value = identifier.get("value") or ""
+            if not value:
+                continue
+            try:
+                result = self.caa_corroborator.corroborate(
+                    value,
+                    issuer_identities=self.config.caaidentities,
+                    account_uri=account_uri,
+                    is_wildcard=value.startswith("*."),
+                )
+            except Exception as err_:
+                self.logger.error("CAA check raised for %s: %s", value, err_)
+                return f"CAA check failed for {value}"
+            if not result.success:
+                return f"CAA forbids issuance for {value}"
+
+        return None
 
     def _authorizations_valid_for_issuance(self, order_name: str) -> bool:
         """True when every order authorization is valid and unexpired."""

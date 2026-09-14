@@ -6,7 +6,7 @@ import json
 import time
 from configparser import ConfigParser
 from typing import List, Tuple, Dict, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from threading import Thread
 from acme2certifier.acme_srv.helper import (
     generate_random_string,
@@ -36,6 +36,7 @@ from acme2certifier.acme_srv.challenge_validators import (
     ChallengeContext,
     ValidationResult,
 )
+from acme2certifier.acme_srv.challenge_validators.mpic import mpic_config_load
 from acme2certifier.acme_srv.challenge_registry_setup import (
     create_challenge_validator_registry,
 )
@@ -825,133 +826,17 @@ class Challenge:
         self.config.caaidentities = self._load_directory_caa_identities(config_dic)
 
     def _load_mpic_configuration(self, config_dic: ConfigParser):
-        """Load Multi-Perspective Issuance Corroboration configuration."""
-        self.config.mpic_enabled = config_dic.getboolean(
-            "Challenge", "mpic_enabled", fallback=False
-        )
-        if not self.config.mpic_enabled:
-            return
+        """Load Multi-Perspective Issuance Corroboration configuration.
 
-        enforcement = (
-            config_dic.get("Challenge", "mpic_enforcement", fallback="enforce")
-            .strip()
-            .lower()
-        )
-        if enforcement not in ("monitor", "enforce"):
-            self.logger.warning(
-                "Invalid mpic_enforcement %r, falling back to 'enforce'", enforcement
-            )
-            enforcement = "enforce"
-        self.config.mpic_enforcement = enforcement
-
-        try:
-            self.config.mpic_min_remote_perspectives = int(
-                config_dic.get(
-                    "Challenge",
-                    "mpic_min_remote_perspectives",
-                    fallback=self.config.mpic_min_remote_perspectives,
-                )
-            )
-        except Exception as err_:
-            self.logger.warning(
-                "Failed to parse mpic_min_remote_perspectives from configuration: %s",
-                err_,
-            )
-        try:
-            self.config.mpic_perspective_timeout = int(
-                config_dic.get(
-                    "Challenge",
-                    "mpic_perspective_timeout",
-                    fallback=self.config.mpic_perspective_timeout,
-                )
-            )
-        except Exception as err_:
-            self.logger.warning(
-                "Failed to parse mpic_perspective_timeout from configuration: %s",
-                err_,
-            )
-        try:
-            self.config.mpic_min_distinct_regions = int(
-                config_dic.get(
-                    "Challenge",
-                    "mpic_min_distinct_regions",
-                    fallback=self.config.mpic_min_distinct_regions,
-                )
-            )
-        except Exception as err_:
-            self.logger.warning(
-                "Failed to parse mpic_min_distinct_regions from configuration: %s",
-                err_,
-            )
-
-        self._load_mpic_perspectives(config_dic)
-        self._load_mpic_provider(config_dic)
-
-    def _load_mpic_provider(self, config_dic: ConfigParser):
-        """Load external (Open MPIC) provider configuration."""
-        provider = (
-            config_dic.get("Challenge", "mpic_provider", fallback="self_hosted")
-            .strip()
-            .lower()
-        )
-        if provider not in ("self_hosted", "open_mpic"):
-            self.logger.warning(
-                "Invalid mpic_provider %r, falling back to 'self_hosted'", provider
-            )
-            provider = "self_hosted"
-        self.config.mpic_provider = provider
-        if provider != "open_mpic":
-            return
-
-        self.config.mpic_provider_url = config_dic.get(
-            "Challenge", "mpic_provider_url", fallback=None
-        )
-        if not self.config.mpic_provider_url:
-            self.logger.warning(
-                "mpic_provider is 'open_mpic' but mpic_provider_url is not set"
-            )
-        self.config.mpic_provider_api_key = config_dic.get(
-            "Challenge", "mpic_provider_api_key", fallback=None
-        )
-        self.config.mpic_provider_token = config_dic.get(
-            "Challenge", "mpic_provider_token", fallback=None
-        )
-        for attr in ("mpic_provider_perspective_count", "mpic_provider_quorum_count"):
-            raw = config_dic.get("Challenge", attr, fallback=None)
-            if raw is not None:
-                try:
-                    setattr(self.config, attr, int(raw))
-                except Exception as err_:
-                    self.logger.warning(
-                        "Failed to parse %s from configuration: %s", attr, err_
-                    )
-
-    def _load_mpic_perspectives(self, config_dic: ConfigParser):
-        """Load the remote perspective list and mTLS credentials for MPIC."""
-        if "mpic_perspectives" in config_dic["Challenge"]:
-            try:
-                perspectives = json.loads(config_dic["Challenge"]["mpic_perspectives"])
-                if isinstance(perspectives, list):
-                    self.config.mpic_perspectives = perspectives
-                else:
-                    self.logger.warning(
-                        "mpic_perspectives must be a JSON array, got: %s",
-                        type(perspectives).__name__,
-                    )
-            except Exception as err_:
-                self.logger.warning(
-                    "Failed to parse mpic_perspectives from configuration: %s", err_
-                )
-
-        self.config.mpic_client_cert = config_dic.get(
-            "Challenge", "mpic_client_cert", fallback=None
-        )
-        self.config.mpic_client_key = config_dic.get(
-            "Challenge", "mpic_client_key", fallback=None
-        )
-        self.config.mpic_ca_bundle = config_dic.get(
-            "Challenge", "mpic_ca_bundle", fallback=None
-        )
+        Parsing lives in the mpic package so that every consumer of the MPIC
+        settings (challenge validation and the CAA check at order finalize)
+        reads them identically.
+        """
+        mpic_cfg = mpic_config_load(self.logger, config_dic)
+        for fld in fields(mpic_cfg):
+            if fld.name == "caaidentities":
+                continue
+            setattr(self.config, fld.name, getattr(mpic_cfg, fld.name))
 
     def _load_directory_caa_identities(self, config_dic: ConfigParser) -> List[str]:
         """Load caaIdentities from Directory section as fallback issuer list."""

@@ -29,6 +29,7 @@ from .coordinator import MpicCoordinator, MpicStats
 from .remote_agent import RemoteAgentPerspective, build_remote_perspectives
 from .external_provider import ExternalMpicProvider
 from .factory import build_mpic_handler
+from .config import MpicConfig, mpic_config_load, caaidentities_load
 from .caa_checker import CaaChecker, caa_permits, caa_rrset_get
 from .caa import CaaCorroborator, build_caa_corroborator
 from .agent import MpicAgent, build_agent
@@ -55,6 +56,9 @@ __all__ = [
     "build_remote_perspectives",
     "ExternalMpicProvider",
     "build_mpic_handler",
+    "MpicConfig",
+    "mpic_config_load",
+    "caaidentities_load",
     "CaaChecker",
     "caa_permits",
     "caa_rrset_get",
