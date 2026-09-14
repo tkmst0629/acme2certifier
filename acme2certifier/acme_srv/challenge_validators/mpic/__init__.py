@@ -25,7 +25,7 @@ from .perspective import (
     LocalPerspective,
 )
 from .quorum import QuorumPolicy, EnforcementMode, QuorumDecision
-from .coordinator import MpicCoordinator
+from .coordinator import MpicCoordinator, MpicStats
 from .remote_agent import RemoteAgentPerspective, build_remote_perspectives
 from .agent import MpicAgent, build_agent
 from .protocol import (
@@ -46,6 +46,7 @@ __all__ = [
     "EnforcementMode",
     "QuorumDecision",
     "MpicCoordinator",
+    "MpicStats",
     "RemoteAgentPerspective",
     "build_remote_perspectives",
     "MpicAgent",

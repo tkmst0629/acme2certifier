@@ -88,6 +88,7 @@ class ChallengeConfiguration:
     mpic_enforcement: str = "enforce"  # "monitor" | "enforce"
     mpic_min_remote_perspectives: int = 3
     mpic_perspective_timeout: int = 10
+    mpic_min_distinct_regions: int = 1
     mpic_perspectives: Optional[List[Dict[str, str]]] = None
     mpic_client_cert: Optional[str] = None
     mpic_client_key: Optional[str] = None
@@ -860,6 +861,19 @@ class Challenge:
         except Exception as err_:
             self.logger.warning(
                 "Failed to parse mpic_perspective_timeout from configuration: %s",
+                err_,
+            )
+        try:
+            self.config.mpic_min_distinct_regions = int(
+                config_dic.get(
+                    "Challenge",
+                    "mpic_min_distinct_regions",
+                    fallback=self.config.mpic_min_distinct_regions,
+                )
+            )
+        except Exception as err_:
+            self.logger.warning(
+                "Failed to parse mpic_min_distinct_regions from configuration: %s",
                 err_,
             )
 

@@ -91,6 +91,7 @@ def _enable_mpic(
     policy = QuorumPolicy(
         min_remote_perspectives=getattr(config, "mpic_min_remote_perspectives", 3),
         enforcement=enforcement,
+        min_distinct_regions=getattr(config, "mpic_min_distinct_regions", 1),
     )
     remote_perspectives = build_remote_perspectives(logger, config)
     coordinator = MpicCoordinator(

@@ -7,7 +7,9 @@ remote perspectives, collects their results in parallel, applies the
 ``details`` carry the per-perspective evidence needed for the audit trail.
 """
 
-from typing import List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+import json
 import logging
 
 from ...threadwithreturnvalue import ThreadWithReturnValue
@@ -19,6 +21,27 @@ INCORRECT_RESPONSE = (
     '{"status": 403, "type": "urn:ietf:params:acme:error:incorrectResponse", '
     '"detail": "Multi-perspective corroboration failed: %s"}'
 )
+
+
+@dataclass
+class MpicStats:
+    """In-process counters for observability (no external dependency)."""
+
+    attempts: int = 0
+    allowed: int = 0
+    denied: int = 0
+    primary_failures: int = 0
+    perspective_non_corroborations: Dict[str, int] = field(default_factory=dict)
+
+    def as_dict(self) -> dict:
+        """Return a plain-dict snapshot of the counters."""
+        return {
+            "attempts": self.attempts,
+            "allowed": self.allowed,
+            "denied": self.denied,
+            "primary_failures": self.primary_failures,
+            "perspective_non_corroborations": dict(self.perspective_non_corroborations),
+        }
 
 
 class MpicCoordinator:
@@ -35,6 +58,7 @@ class MpicCoordinator:
         self.policy = policy
         self.remote_perspectives = list(remote_perspectives or [])
         self.perspective_timeout = perspective_timeout
+        self.stats = MpicStats()
 
     def corroborate(
         self,
@@ -57,7 +81,9 @@ class MpicCoordinator:
         decision = self.policy.evaluate(results)
         allowed = self.policy.is_issuance_allowed(decision, self.logger)
 
+        self._update_stats(results, decision, allowed)
         self._log_decision(challenge_type, context, decision, allowed)
+        self._audit(challenge_type, context, decision, allowed, results)
 
         error_message = None
         if not allowed:
@@ -124,7 +150,7 @@ class MpicCoordinator:
         self.logger.info(
             "MPIC %s challenge=%s host=%s mode=%s decision=%s primary_ok=%s "
             "remote=%d corroborating=%d non_corroborating=%d allowed_non_corr=%d "
-            "min_remote=%d reasons=%s",
+            "min_remote=%d distinct_regions=%d/%d reasons=%s",
             challenge_type,
             context.challenge_name,
             context.authorization_value,
@@ -140,8 +166,63 @@ class MpicCoordinator:
             decision.remote_non_corroborating,
             decision.allowed_non_corroborating,
             decision.min_remote_required,
+            decision.distinct_regions,
+            decision.min_distinct_regions,
             "; ".join(decision.reasons) or "none",
         )
+
+    def _update_stats(
+        self,
+        results: List[PerspectiveResult],
+        decision: QuorumDecision,
+        allowed: bool,
+    ) -> None:
+        """Increment the in-process observability counters."""
+        self.stats.attempts += 1
+        if allowed:
+            self.stats.allowed += 1
+        else:
+            self.stats.denied += 1
+        if not decision.primary_ok:
+            self.stats.primary_failures += 1
+        for result in results:
+            if not result.is_primary and not result.corroborates:
+                counters = self.stats.perspective_non_corroborations
+                counters[result.perspective_name] = (
+                    counters.get(result.perspective_name, 0) + 1
+                )
+
+    def _audit(
+        self,
+        challenge_type: str,
+        context: ChallengeContext,
+        decision: QuorumDecision,
+        allowed: bool,
+        results: List[PerspectiveResult],
+    ) -> None:
+        """Emit one machine-readable audit record for the corroboration attempt.
+
+        A stable JSON line per issuance decision, carrying per-perspective
+        evidence, so operators can demonstrate MPIC compliance during audits.
+        """
+        record = {
+            "event": "mpic_corroboration",
+            "challenge_type": challenge_type,
+            "challenge": context.challenge_name,
+            "identifier": context.authorization_value,
+            "enforcement": (
+                self.policy.enforcement.value
+                if isinstance(self.policy.enforcement, EnforcementMode)
+                else self.policy.enforcement
+            ),
+            "decision": "allow" if allowed else "deny",
+            "quorum": self._decision_details(decision),
+            "perspectives": [self._result_details(r) for r in results],
+        }
+        try:
+            self.logger.info("MPIC-AUDIT %s", json.dumps(record, sort_keys=True))
+        except (TypeError, ValueError) as err:  # pragma: no cover - defensive
+            self.logger.warning("MPIC-AUDIT serialization failed: %s", err)
 
     @staticmethod
     def _decision_details(decision: QuorumDecision) -> dict:
@@ -153,6 +234,8 @@ class MpicCoordinator:
             "remote_non_corroborating": decision.remote_non_corroborating,
             "allowed_non_corroborating": decision.allowed_non_corroborating,
             "min_remote_required": decision.min_remote_required,
+            "distinct_regions": decision.distinct_regions,
+            "min_distinct_regions": decision.min_distinct_regions,
             "reasons": decision.reasons,
         }
 

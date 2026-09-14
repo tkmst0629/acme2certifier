@@ -60,7 +60,25 @@ class QuorumDecision:
     remote_non_corroborating: int
     allowed_non_corroborating: int
     min_remote_required: int
+    distinct_regions: int = 0
+    min_distinct_regions: int = 1
     reasons: List[str] = field(default_factory=list)
+
+
+def _region_key(result: PerspectiveResult) -> str:
+    """Best-effort region identity for a perspective (for diversity checks).
+
+    Uses declared country, then ASN, then the perspective name. The software
+    cannot verify physical 500 km separation, so distinct declared regions are
+    used as a proxy for the BR topology requirement (operator responsibility).
+    """
+    meta = result.metadata
+    if meta:
+        if meta.country:
+            return f"country:{meta.country}"
+        if meta.asn:
+            return f"asn:{meta.asn}"
+    return f"name:{result.perspective_name}"
 
 
 @dataclass
@@ -69,6 +87,7 @@ class QuorumPolicy:
 
     min_remote_perspectives: int = 3
     enforcement: EnforcementMode = EnforcementMode.ENFORCE
+    min_distinct_regions: int = 1
 
     def evaluate(self, results: List[PerspectiveResult]) -> QuorumDecision:
         """Evaluate perspective results against the quorum rules."""
@@ -77,9 +96,11 @@ class QuorumPolicy:
 
         primary_ok = bool(primaries) and all(r.corroborates for r in primaries)
         remote_total = len(remotes)
-        remote_corroborating = sum(1 for r in remotes if r.corroborates)
+        corroborating = [r for r in remotes if r.corroborates]
+        remote_corroborating = len(corroborating)
         remote_non_corroborating = remote_total - remote_corroborating
         allowed = max_non_corroboration(remote_total)
+        distinct_regions = len({_region_key(r) for r in corroborating})
 
         reasons: List[str] = []
         if not primaries:
@@ -96,11 +117,17 @@ class QuorumPolicy:
                 f"too many non-corroborating remote perspectives: "
                 f"{remote_non_corroborating} > {allowed}"
             )
+        if distinct_regions < self.min_distinct_regions:
+            reasons.append(
+                f"insufficient network diversity: {distinct_regions} distinct "
+                f"region(s) < {self.min_distinct_regions}"
+            )
 
         compliant = (
             primary_ok
             and remote_total >= self.min_remote_perspectives
             and remote_non_corroborating <= allowed
+            and distinct_regions >= self.min_distinct_regions
         )
 
         return QuorumDecision(
@@ -111,6 +138,8 @@ class QuorumPolicy:
             remote_non_corroborating=remote_non_corroborating,
             allowed_non_corroborating=allowed,
             min_remote_required=self.min_remote_perspectives,
+            distinct_regions=distinct_regions,
+            min_distinct_regions=self.min_distinct_regions,
             reasons=reasons,
         )
 

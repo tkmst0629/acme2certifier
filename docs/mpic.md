@@ -17,10 +17,13 @@
 >   with bearer-token auth and optional client-cert-header enforcement), the
 >   `a2c-mpic-agent` dev runner, and a deployment example under
 >   [`examples/mpic/`](../examples/mpic).
+> * PR4 — enforcement & observability: a network-diversity guard
+>   (`mpic_min_distinct_regions`), a machine-readable `MPIC-AUDIT` JSON record
+>   per issuance decision, and in-process metrics (`coordinator.stats`).
 >
-> End to end the coordinator now fans out over mTLS to agents that run the
-> standard validators from their own vantage points and applies the quorum.
-> Remaining: enforcement/observability hardening (PR4).
+> End to end the coordinator fans out over mTLS to agents that run the standard
+> validators from their own vantage points, applies the quorum and diversity
+> policy, and emits an audit trail.
 
 ## 1. Goal
 
@@ -214,6 +217,7 @@ mpic_perspectives: [
 mpic_client_cert: /path/mtls.crt
 mpic_client_key:  /path/mtls.key
 mpic_ca_bundle:   /path/agents-ca.pem
+mpic_min_distinct_regions: 2       # network-diversity guard (1 = off)
 ```
 
 Backward compatibility: `mpic_enabled` defaults to `False`. When disabled, the
@@ -222,9 +226,24 @@ current meaning (resolver failover within a perspective).
 
 ## 7. Observability / audit
 
-Each issuance decision logs a structured record: challenge, identifier,
-per-perspective success/evidence/metadata/latency, computed quorum, and the
-final decision. Required to demonstrate MPIC compliance during audits.
+Each issuance decision emits a machine-readable audit record as a single JSON
+log line prefixed `MPIC-AUDIT`: challenge, identifier, enforcement mode, the
+final decision, the computed quorum (including `distinct_regions`), and every
+perspective's success/evidence/metadata/latency. This is the trail required to
+demonstrate MPIC compliance during audits.
+
+The coordinator also keeps in-process counters at `MpicCoordinator.stats`
+(`attempts`, `allowed`, `denied`, `primary_failures`, and per-perspective
+non-corroboration counts), exposed via `stats.as_dict()` for scraping without
+adding a metrics dependency.
+
+### 7.1 Network-diversity guard
+
+`mpic_min_distinct_regions` requires the corroborating remote perspectives to
+span at least that many distinct declared regions (country, else ASN, else
+name). It is a proxy for the BR 500 km / topology requirement — the software
+cannot measure physical distance — so correct placement remains an operator
+responsibility. `1` (default) disables the check; set `2`+ for real MPIC.
 
 ## 8. Out of scope / caveats
 
