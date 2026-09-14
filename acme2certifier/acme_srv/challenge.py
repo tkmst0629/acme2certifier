@@ -83,6 +83,11 @@ class ChallengeConfiguration:
     eab_profiling: bool = False
     eab_handler: Optional[Any] = None
     async_mode: bool = False
+    # Multi-Perspective Issuance Corroboration (MPIC) -- see docs/mpic.md
+    mpic_enabled: bool = False
+    mpic_enforcement: str = "enforce"  # "monitor" | "enforce"
+    mpic_min_remote_perspectives: int = 3
+    mpic_perspective_timeout: int = 10
 
 
 class DatabaseChallengeRepository(ChallengeRepository):
@@ -807,6 +812,53 @@ class Challenge:
 
         self.config.caaidentities = self._load_directory_caa_identities(config_dic)
 
+    def _load_mpic_configuration(self, config_dic: ConfigParser):
+        """Load Multi-Perspective Issuance Corroboration configuration."""
+        self.config.mpic_enabled = config_dic.getboolean(
+            "Challenge", "mpic_enabled", fallback=False
+        )
+        if not self.config.mpic_enabled:
+            return
+
+        enforcement = (
+            config_dic.get("Challenge", "mpic_enforcement", fallback="enforce")
+            .strip()
+            .lower()
+        )
+        if enforcement not in ("monitor", "enforce"):
+            self.logger.warning(
+                "Invalid mpic_enforcement %r, falling back to 'enforce'", enforcement
+            )
+            enforcement = "enforce"
+        self.config.mpic_enforcement = enforcement
+
+        try:
+            self.config.mpic_min_remote_perspectives = int(
+                config_dic.get(
+                    "Challenge",
+                    "mpic_min_remote_perspectives",
+                    fallback=self.config.mpic_min_remote_perspectives,
+                )
+            )
+        except Exception as err_:
+            self.logger.warning(
+                "Failed to parse mpic_min_remote_perspectives from configuration: %s",
+                err_,
+            )
+        try:
+            self.config.mpic_perspective_timeout = int(
+                config_dic.get(
+                    "Challenge",
+                    "mpic_perspective_timeout",
+                    fallback=self.config.mpic_perspective_timeout,
+                )
+            )
+        except Exception as err_:
+            self.logger.warning(
+                "Failed to parse mpic_perspective_timeout from configuration: %s",
+                err_,
+            )
+
     def _load_directory_caa_identities(self, config_dic: ConfigParser) -> List[str]:
         """Load caaIdentities from Directory section as fallback issuer list."""
         tmp_caaidentities = config_dic.get("Directory", "caaidentities", fallback=None)
@@ -861,6 +913,7 @@ class Challenge:
                 "Challenge", "sectigo_sim", fallback=False
             )
             self._load_dns_persist_configuration(config_dic)
+            self._load_mpic_configuration(config_dic)
 
             self.config.tnauthlist_support = config_dic.getboolean(
                 "Order", "tnauthlist_support", fallback=False

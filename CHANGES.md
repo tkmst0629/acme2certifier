@@ -6,6 +6,12 @@ This is a high-level summary of the most important changes. For a full list of
 changes, see the [git commit log](https://github.com/grindsa/acme2certifier/commits)
 and pick the appropriate release branch.
 
+## Unreleased
+
+**Features**:
+
+- Multi-Perspective Issuance Corroboration (MPIC) coordination core (CA/Browser Forum BR 3.2.2.9). Adds a perspective/quorum/coordinator layer for corroborating `http-01`/`dns-01`/`tls-alpn-01` across multiple network perspectives, gated behind the new `mpic_enabled` option (default `False`, no behaviour change). Remote perspectives are wired in follow-up changes. See [docs/mpic.md](docs/mpic.md).
+
 ## Changes in 0.45.3
 
 **Bug Fixes and Improvements**:

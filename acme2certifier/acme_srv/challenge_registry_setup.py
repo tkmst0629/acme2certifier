@@ -16,7 +16,14 @@ from .challenge_validators import (
     EmailReplyChallengeValidator,
     TkauthChallengeValidator,
     SourceAddressValidator,
+    MpicCoordinator,
+    QuorumPolicy,
+    EnforcementMode,
 )
+
+# Challenge types eligible for Multi-Perspective Issuance Corroboration.
+# MPIC applies to all domain-control-validation methods (BR 3.2.2.9).
+MPIC_CHALLENGE_TYPES = ["http-01", "dns-01", "tls-alpn-01"]
 
 
 def create_challenge_validator_registry(
@@ -51,6 +58,10 @@ def create_challenge_validator_registry(
         )
     )
 
+    # Enable Multi-Perspective Issuance Corroboration if configured
+    if getattr(config, "mpic_enabled", False):
+        _enable_mpic(logger, registry, config)
+
     logger.debug(
         "create_challenge_validator_registry(): Registry created with %d validators: %s",
         len(registry.get_supported_types()),
@@ -59,6 +70,43 @@ def create_challenge_validator_registry(
 
     logger.debug("challenge_registry_setup.create_challenge_validator_registry() ended")
     return registry
+
+
+def _enable_mpic(
+    logger: logging.Logger,
+    registry: ChallengeValidatorRegistry,
+    config: Any,
+) -> None:
+    """Attach an MPIC coordinator to the registry based on configuration.
+
+    Remote perspectives are wired in a later change; with none configured the
+    coordinator runs the Primary perspective only, which fails the quorum in
+    'enforce' mode (as it must -- MPIC requires remote perspectives) and logs
+    without blocking in 'monitor' mode.
+    """
+    logger.debug("challenge_registry_setup._enable_mpic()")
+    try:
+        enforcement = EnforcementMode(getattr(config, "mpic_enforcement", "enforce"))
+    except ValueError:
+        enforcement = EnforcementMode.ENFORCE
+
+    policy = QuorumPolicy(
+        min_remote_perspectives=getattr(config, "mpic_min_remote_perspectives", 3),
+        enforcement=enforcement,
+    )
+    coordinator = MpicCoordinator(
+        logger,
+        policy=policy,
+        remote_perspectives=[],  # populated in a later change (PR2)
+        perspective_timeout=getattr(config, "mpic_perspective_timeout", 10),
+    )
+    registry.enable_mpic(coordinator, MPIC_CHALLENGE_TYPES)
+    logger.info(
+        "MPIC enabled (enforcement=%s, min_remote_perspectives=%d) for: %s",
+        enforcement.value,
+        policy.min_remote_perspectives,
+        ", ".join(MPIC_CHALLENGE_TYPES),
+    )
 
 
 def create_custom_registry(

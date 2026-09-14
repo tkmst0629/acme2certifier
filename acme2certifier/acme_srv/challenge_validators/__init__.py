@@ -35,6 +35,17 @@ from .email_reply_validator import EmailReplyChallengeValidator
 from .tkauth_validator import TkauthChallengeValidator
 from .source_address_validator import SourceAddressValidator
 
+# Import MPIC coordination layer
+from .mpic import (
+    MpicCoordinator,
+    QuorumPolicy,
+    EnforcementMode,
+    LocalPerspective,
+    RemotePerspective,
+    PerspectiveMetadata,
+    PerspectiveResult,
+)
+
 __all__ = [
     # Base classes
     "ChallengeValidator",
@@ -53,4 +64,12 @@ __all__ = [
     "EmailReplyChallengeValidator",
     "TkauthChallengeValidator",
     "SourceAddressValidator",
+    # MPIC coordination
+    "MpicCoordinator",
+    "QuorumPolicy",
+    "EnforcementMode",
+    "LocalPerspective",
+    "RemotePerspective",
+    "PerspectiveMetadata",
+    "PerspectiveResult",
 ]
