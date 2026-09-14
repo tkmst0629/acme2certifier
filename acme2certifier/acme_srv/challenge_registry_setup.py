@@ -16,11 +16,7 @@ from .challenge_validators import (
     EmailReplyChallengeValidator,
     TkauthChallengeValidator,
     SourceAddressValidator,
-    MpicCoordinator,
-    QuorumPolicy,
-    EnforcementMode,
-    build_remote_perspectives,
-    ExternalMpicProvider,
+    build_mpic_handler,
     MPIC_CHALLENGE_TYPES,
 )
 
@@ -84,71 +80,9 @@ def _enable_mpic(
     perspectives) and logs without blocking in 'monitor' mode.
     """
     logger.debug("challenge_registry_setup._enable_mpic()")
-    try:
-        enforcement = EnforcementMode(getattr(config, "mpic_enforcement", "enforce"))
-    except ValueError:
-        enforcement = EnforcementMode.ENFORCE
-
-    provider = getattr(config, "mpic_provider", "self_hosted")
-    if provider == "open_mpic":
-        handler = _build_external_provider(logger, config, enforcement)
-    else:
-        handler = _build_self_hosted_coordinator(logger, config, enforcement)
-
+    handler = build_mpic_handler(logger, config)
     registry.enable_mpic(handler, MPIC_CHALLENGE_TYPES)
-
-
-def _build_self_hosted_coordinator(
-    logger: logging.Logger, config: Any, enforcement: EnforcementMode
-) -> MpicCoordinator:
-    """Build the self-hosted coordinator (method 3a)."""
-    policy = QuorumPolicy(
-        min_remote_perspectives=getattr(config, "mpic_min_remote_perspectives", 3),
-        enforcement=enforcement,
-        min_distinct_regions=getattr(config, "mpic_min_distinct_regions", 1),
-    )
-    remote_perspectives = build_remote_perspectives(logger, config)
-    coordinator = MpicCoordinator(
-        logger,
-        policy=policy,
-        remote_perspectives=remote_perspectives,
-        perspective_timeout=getattr(config, "mpic_perspective_timeout", 10),
-    )
-    logger.info(
-        "MPIC enabled (self_hosted, enforcement=%s, min_remote_perspectives=%d, "
-        "remote_perspectives=%d) for: %s",
-        enforcement.value,
-        policy.min_remote_perspectives,
-        len(remote_perspectives),
-        ", ".join(MPIC_CHALLENGE_TYPES),
-    )
-    return coordinator
-
-
-def _build_external_provider(
-    logger: logging.Logger, config: Any, enforcement: EnforcementMode
-) -> ExternalMpicProvider:
-    """Build the external Open MPIC provider adapter (method 3b)."""
-    provider = ExternalMpicProvider(
-        logger,
-        url=getattr(config, "mpic_provider_url", None),
-        api_key=getattr(config, "mpic_provider_api_key", None),
-        token=getattr(config, "mpic_provider_token", None),
-        enforcement=enforcement,
-        timeout=getattr(config, "mpic_perspective_timeout", 10),
-        client_cert=getattr(config, "mpic_client_cert", None),
-        client_key=getattr(config, "mpic_client_key", None),
-        ca_bundle=getattr(config, "mpic_ca_bundle", None),
-        perspective_count=getattr(config, "mpic_provider_perspective_count", None),
-        quorum_count=getattr(config, "mpic_provider_quorum_count", None),
-    )
-    logger.info(
-        "MPIC enabled (open_mpic provider, enforcement=%s, url=%s) for: %s",
-        enforcement.value,
-        getattr(config, "mpic_provider_url", None),
-        ", ".join(MPIC_CHALLENGE_TYPES),
-    )
-    return provider
+    logger.info("MPIC enabled for challenge types: %s", ", ".join(MPIC_CHALLENGE_TYPES))
 
 
 def create_custom_registry(

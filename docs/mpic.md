@@ -24,10 +24,15 @@
 >   whole corroboration to an Open MPIC-compatible `POST /mpic` service.
 >   `mpic_provider = self_hosted | open_mpic` selects between the built-in
 >   coordinator and the external service.
+> * PR6 — **CAA corroboration** (section 10): `CaaChecker` (RFC 8659/8657,
+>   fail-closed) plus `CaaCorroborator` run a CAA policy check across the same
+>   MPIC handler as DCV. Agents serve the `caa` check type, and the external
+>   provider maps it to Open MPIC's `check_type: caa`.
 >
 > End to end, either the built-in coordinator fans out over mTLS to self-hosted
 > agents and applies the quorum/diversity policy, or the corroboration is
-> delegated to an external Open MPIC service — both emit an audit trail.
+> delegated to an external Open MPIC service — both emit an audit trail, and
+> both cover DCV **and** CAA.
 
 ## 1. Goal
 
@@ -292,7 +297,10 @@ responsibility. `1` (default) disables the check; set `2`+ for real MPIC.
 - The software cannot verify physical 500 km separation or true AS diversity;
   it records declared metadata and enforces the policy on that metadata.
   Correct placement is an operator responsibility.
-- CAA multi-perspective checking is a follow-up once/if a2c performs CAA.
+- CAA multi-perspective checking is implemented (section 10) but is **not yet
+  wired into the issuance flow** — it is a component plus an API the operator
+  calls. acme2certifier historically does not perform CAA checking at all
+  (that is the issuing CA's duty); this matters only when a2c *is* the CA.
 
 ## 9. Delivery plan (PR breakdown)
 
@@ -312,3 +320,57 @@ responsibility. `1` (default) disables the check; set `2`+ for real MPIC.
 5. **PR5 — External provider adapter.** `ExternalMpicProvider` delegates the
    whole corroboration to an Open MPIC-compatible `POST /mpic` service, selected
    via `mpic_provider: open_mpic` (see section 6.1).
+6. **PR6 — CAA corroboration.** `CaaChecker` + `CaaCorroborator` (section 10).
+
+## 10. CAA corroboration
+
+SC-067 requires **both** domain validation *and* CAA checks to be performed from
+multiple network perspectives. CAA checking is the duty of whoever issues the
+certificate: in a typical acme2certifier deployment that is the backend CA, and
+a2c performs no CAA lookups at all. When a2c **is** the issuing CA, the CAA
+check becomes its responsibility and must also be multi-perspective.
+
+`caa` is modelled as an additional check type flowing through the same MPIC
+machinery as DCV, so quorum, diversity and the audit trail apply unchanged:
+
+```
+CaaCorroborator.corroborate(identifier, issuer_identities, ...)
+  -> <MPIC handler>.corroborate("caa", context, CaaChecker)
+       self_hosted : LocalPerspective + remote agents each run CaaChecker
+                     -> QuorumPolicy (quorum + diversity) -> allow/deny
+       open_mpic   : POST /mpic  {check_type: "caa", caa_check_parameters: ...}
+```
+
+`CaaChecker` (`caa_checker.py`) implements the policy itself:
+
+- RFC 8659 tree-climbing to the relevant CAA record set; no records anywhere =>
+  permitted; a set without applicable `issue`/`issuewild` => permitted.
+- Wildcard requests prefer `issuewild`, falling back to `issue`.
+- An `issue`/`issuewild` value of `;` forbids issuance.
+- An issuer-critical (flag `0x80`) property we do not recognise => refused.
+- RFC 8657 `accounturi` and `validationmethods` parameters are honoured.
+- Lookup failures (SERVFAIL/timeout) are **fail-closed** — a broken or hijacked
+  resolver can never produce a false allow. DNSSEC validation is delegated to
+  the resolver.
+
+Usage (the component is deliberately *not* wired into the issuance flow yet):
+
+```python
+from acme2certifier.acme_srv.challenge_validators.mpic import build_caa_corroborator
+
+corroborator = build_caa_corroborator(logger, config)
+result = corroborator.corroborate(
+    "www.example.com",
+    issuer_identities=["ca.example"],          # your CA's CAA identity
+    account_uri="https://acme.example/acct/1", # for RFC 8657 accounturi
+    is_wildcard=False,
+    validation_method="dns-01",
+)
+if not result.success:
+    raise RuntimeError("CAA forbids issuance")
+```
+
+No new configuration is required: `build_caa_corroborator` reuses
+`mpic_provider` and the perspective/provider settings, so CAA is corroborated by
+the same agents (which serve the `caa` check type) or the same external service
+as DCV.

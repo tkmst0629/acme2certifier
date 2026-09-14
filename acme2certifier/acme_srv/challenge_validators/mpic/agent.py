@@ -19,6 +19,7 @@ from ..base import ChallengeValidator, ValidationResult
 from ..http_validator import HttpChallengeValidator
 from ..dns_validator import DnsChallengeValidator
 from ..tls_alpn_validator import TlsAlpnChallengeValidator
+from .caa_checker import CaaChecker
 from .protocol import (
     MPIC_CHALLENGE_TYPES,
     payload_to_context,
@@ -77,10 +78,12 @@ def build_agent(
     eligible_types: Optional[List[str]] = None,
     use_local_resolver: bool = True,
 ) -> MpicAgent:
-    """Build an :class:`MpicAgent` with the standard DCV validators registered.
+    """Build an :class:`MpicAgent` with the standard DCV validators and the CAA
+    checker registered.
 
     The registry is built without MPIC enabled, so the agent performs plain
-    single-perspective validation and never fans out to further perspectives.
+    single-perspective validation/CAA checks and never fans out to further
+    perspectives. It serves ``http-01``/``dns-01``/``tls-alpn-01`` and ``caa``.
     """
     logger.debug("mpic.build_agent()")
     # imported here to avoid an import cycle at package load time
@@ -92,9 +95,12 @@ def build_agent(
         HttpChallengeValidator(logger),
         DnsChallengeValidator(logger),
         TlsAlpnChallengeValidator(logger),
+        CaaChecker(logger),
     ]
     for validator in validators:
         registry.register_validator(validator)
+    if eligible_types is None:
+        eligible_types = list(MPIC_CHALLENGE_TYPES) + ["caa"]
     return MpicAgent(
         logger,
         registry,

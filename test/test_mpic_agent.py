@@ -109,10 +109,10 @@ class TestMpicAgent(unittest.TestCase):
         args, _ = self.registry.validate_challenge.call_args
         self.assertEqual(args[1].dns_servers, ["9.9.9.9"])
 
-    def test_006_build_agent_registers_dcv_validators(self):
+    def test_006_build_agent_registers_dcv_validators_and_caa(self):
         agent = build_agent(self.logger)
         types = set(agent.registry.get_supported_types())
-        self.assertEqual(types, {"http-01", "dns-01", "tls-alpn-01"})
+        self.assertEqual(types, {"http-01", "dns-01", "tls-alpn-01", "caa"})
 
 
 class _StartResponse:

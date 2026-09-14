@@ -28,6 +28,9 @@ from .quorum import QuorumPolicy, EnforcementMode, QuorumDecision
 from .coordinator import MpicCoordinator, MpicStats
 from .remote_agent import RemoteAgentPerspective, build_remote_perspectives
 from .external_provider import ExternalMpicProvider
+from .factory import build_mpic_handler
+from .caa_checker import CaaChecker, caa_permits, caa_rrset_get
+from .caa import CaaCorroborator, build_caa_corroborator
 from .agent import MpicAgent, build_agent
 from .protocol import (
     MPIC_VALIDATE_PATH,
@@ -51,6 +54,12 @@ __all__ = [
     "RemoteAgentPerspective",
     "build_remote_perspectives",
     "ExternalMpicProvider",
+    "build_mpic_handler",
+    "CaaChecker",
+    "caa_permits",
+    "caa_rrset_get",
+    "CaaCorroborator",
+    "build_caa_corroborator",
     "MpicAgent",
     "build_agent",
     "MPIC_VALIDATE_PATH",

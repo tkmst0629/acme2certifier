@@ -15,6 +15,7 @@ and pick the appropriate release branch.
 - MPIC remote-agent service: `POST /mpic/validate` (`MpicAgent` + `agent_wsgi`) runs the standard validators from the agent's own vantage point, authenticated by a bearer token and mutual TLS terminated at the reverse proxy. Ships the `a2c-mpic-agent` runner and a docker-compose/nginx example in `examples/mpic/`.
 - MPIC enforcement & observability: network-diversity guard (`mpic_min_distinct_regions`), a machine-readable `MPIC-AUDIT` JSON record per issuance decision, and in-process metrics on the coordinator.
 - MPIC external provider: `mpic_provider: open_mpic` delegates the whole corroboration to an [Open MPIC](https://open-mpic.org/)-compatible `POST /mpic` service (`mpic_provider_url`/`mpic_provider_api_key`/`mpic_provider_token`) instead of the built-in coordinator.
+- Multi-perspective CAA corroboration: `CaaChecker` (RFC 8659 tree-climbing, RFC 8657 `accounturi`/`validationmethods`, fail-closed on lookup errors) and `CaaCorroborator` run CAA checks across the configured MPIC handler — self-hosted agents (which now serve the `caa` check type) or Open MPIC's `check_type: caa`. Exposed as a component plus `build_caa_corroborator()` API; not yet wired into the issuance flow. Relevant when acme2certifier itself is the issuing CA. See [docs/mpic.md](docs/mpic.md) section 10.
 
 ## Changes in 0.45.3
 

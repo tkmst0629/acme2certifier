@@ -29,12 +29,13 @@ from .quorum import EnforcementMode
 
 MPIC_ENDPOINT_PATH = "/mpic"
 
-# acme2certifier challenge type -> Open MPIC validation_method
+# acme2certifier challenge type -> Open MPIC validation_method (DCV)
 _METHOD_MAP = {
     "dns-01": "acme-dns-01",
     "http-01": "acme-http-01",
     "tls-alpn-01": "acme-tls-alpn-01",
 }
+CAA_CHECK_TYPE = "caa"
 
 INCORRECT_RESPONSE = (
     '{"status": 403, "type": "urn:ietf:params:acme:error:incorrectResponse", '
@@ -153,13 +154,18 @@ class ExternalMpicProvider:
             sha256_hash,
         )
 
+        raw_target = context.authorization_value or ""
+        is_wildcard = raw_target.startswith("*.")
+        target = raw_target[2:] if is_wildcard else raw_target
+
+        if challenge_type == CAA_CHECK_TYPE:
+            body = self._build_caa_request(target, is_wildcard, context)
+            self._add_orchestration(body)
+            return body
+
         method = _METHOD_MAP.get(challenge_type)
         if not method:
             raise ValueError(f"unsupported challenge_type: {challenge_type}")
-
-        target = context.authorization_value or ""
-        if target.startswith("*."):
-            target = target[2:]
 
         key_authorization = (
             context.keyauthorization or f"{context.token}.{context.jwk_thumbprint}"
@@ -177,6 +183,29 @@ class ExternalMpicProvider:
                 self.logger, sha256_hash(self.logger, key_authorization)
             )
 
+        self._add_orchestration(body)
+        return body
+
+    @staticmethod
+    def _build_caa_request(
+        target: str, is_wildcard: bool, context: ChallengeContext
+    ) -> Dict[str, Any]:
+        """Build an Open MPIC CAA (check_type=caa) request body."""
+        options = context.options or {}
+        caa_params: Dict[str, Any] = {
+            "certificate_type": ("tls-server-wildcard" if is_wildcard else "tls-server")
+        }
+        issuers = options.get("issuer_domain_names")
+        if issuers:
+            caa_params["caa_domains"] = issuers
+        return {
+            "domain_or_ip_target": target,
+            "check_type": CAA_CHECK_TYPE,
+            "caa_check_parameters": caa_params,
+        }
+
+    def _add_orchestration(self, body: Dict[str, Any]) -> None:
+        """Attach optional perspective/quorum orchestration parameters."""
         orchestration: Dict[str, Any] = {}
         if self.perspective_count is not None:
             orchestration["perspective_count"] = self.perspective_count
@@ -184,7 +213,6 @@ class ExternalMpicProvider:
             orchestration["quorum_count"] = self.quorum_count
         if orchestration:
             body["orchestration_parameters"] = orchestration
-        return body
 
     def _log(
         self,
