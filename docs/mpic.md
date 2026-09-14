@@ -20,10 +20,14 @@
 > * PR4 — enforcement & observability: a network-diversity guard
 >   (`mpic_min_distinct_regions`), a machine-readable `MPIC-AUDIT` JSON record
 >   per issuance decision, and in-process metrics (`coordinator.stats`).
+> * PR5 — external provider (method 3b): `ExternalMpicProvider` delegates the
+>   whole corroboration to an Open MPIC-compatible `POST /mpic` service.
+>   `mpic_provider = self_hosted | open_mpic` selects between the built-in
+>   coordinator and the external service.
 >
-> End to end the coordinator fans out over mTLS to agents that run the standard
-> validators from their own vantage points, applies the quorum and diversity
-> policy, and emits an audit trail.
+> End to end, either the built-in coordinator fans out over mTLS to self-hosted
+> agents and applies the quorum/diversity policy, or the corroboration is
+> delegated to an external Open MPIC service — both emit an audit trail.
 
 ## 1. Goal
 
@@ -114,8 +118,14 @@ Implementations:
   just this one) behaviour is identical to today.
 - `RemoteAgentPerspective` (method 3a) — mTLS HTTP client to a self-hosted
   validation agent (section 5).
-- `ExternalMpicPerspective` (method 3b, optional/later) — adapter to an
-  external MPIC service (e.g. Open MPIC) or provider API.
+
+Note that a `RemotePerspective` is a *single* perspective; the local
+`MpicCoordinator` applies the quorum across several of them. An Open
+MPIC-compatible service is a different shape — it performs the whole
+corroboration (fan-out + quorum) and returns one `is_valid` verdict — so it is
+integrated as a **provider** (`ExternalMpicProvider`, method 3b, section 6.1),
+not a perspective. It exposes the same `corroborate()` entry point as the
+coordinator but bypasses the local `QuorumPolicy`.
 
 `PerspectiveResult` carries: `perspective_name`, `success`, `invalid`,
 `error_message`, `evidence` (the validator `details`: resolved records/IPs,
@@ -224,6 +234,38 @@ Backward compatibility: `mpic_enabled` defaults to `False`. When disabled, the
 existing single-perspective path runs untouched. `dns_server_list` keeps its
 current meaning (resolver failover within a perspective).
 
+### 6.1 External provider (Open MPIC, method 3b)
+
+Set `mpic_provider: open_mpic` to delegate the whole corroboration to an
+[Open MPIC](https://open-mpic.org/)-compatible service instead of running the
+built-in coordinator. The service does the fan-out and quorum and returns
+`is_valid`; the local `QuorumPolicy`/perspective settings are not used.
+
+```ini
+[Challenge]
+mpic_enabled: True
+mpic_provider: open_mpic
+mpic_enforcement: enforce
+mpic_provider_url: https://mpic.internal.example      # POST {url}/mpic
+mpic_provider_api_key: <x-api-key secret>             # or mpic_provider_token (Bearer)
+mpic_provider_perspective_count: 6                    # optional orchestration
+mpic_provider_quorum_count: 5                         # optional orchestration
+# mpic_client_cert / mpic_client_key / mpic_ca_bundle also apply to the TLS call
+```
+
+In `monitor` mode the local single-perspective validator still gates issuance
+and the external verdict is only observed/logged (rollout behaviour); in
+`enforce` mode the external `is_valid` decides. acme2certifier challenge types
+map to Open MPIC `validation_method`s: `dns-01`→`acme-dns-01`,
+`http-01`→`acme-http-01`, `tls-alpn-01`→`acme-tls-alpn-01`.
+
+Open MPIC deploys as AWS Lambda (turnkey) or Docker containers; see
+[open-mpic.org](https://open-mpic.org/) and the
+[API specification](https://github.com/open-mpic/open-mpic-specification). The
+IETF is standardising an MPIC service API
+([draft-westerbaan-alldispatch-mpic](https://datatracker.ietf.org/doc/draft-westerbaan-alldispatch-mpic/));
+`ExternalMpicProvider` should track it as it matures.
+
 ## 7. Observability / audit
 
 Each issuance decision emits a machine-readable audit record as a single JSON
@@ -267,5 +309,6 @@ responsibility. `1` (default) disables the check; set `2`+ for real MPIC.
 4. **PR4 — Enforcement, phasing & observability.** `monitor`/`enforce` modes,
    structured audit logging, metrics; extend coverage to `http-01` and
    `tls-alpn-01`.
-5. **PR5 (optional) — External provider adapter.** `ExternalMpicPerspective`
-   for Open MPIC / third-party APIs as an alternative perspective type.
+5. **PR5 — External provider adapter.** `ExternalMpicProvider` delegates the
+   whole corroboration to an Open MPIC-compatible `POST /mpic` service, selected
+   via `mpic_provider: open_mpic` (see section 6.1).

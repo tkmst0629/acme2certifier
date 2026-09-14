@@ -14,6 +14,7 @@ and pick the appropriate release branch.
 - MPIC remote-agent client: `RemoteAgentPerspective` delegates validation to self-hosted agents over mutual TLS. New `mpic_perspectives` (JSON list of agents) plus `mpic_client_cert`/`mpic_client_key`/`mpic_ca_bundle` options.
 - MPIC remote-agent service: `POST /mpic/validate` (`MpicAgent` + `agent_wsgi`) runs the standard validators from the agent's own vantage point, authenticated by a bearer token and mutual TLS terminated at the reverse proxy. Ships the `a2c-mpic-agent` runner and a docker-compose/nginx example in `examples/mpic/`.
 - MPIC enforcement & observability: network-diversity guard (`mpic_min_distinct_regions`), a machine-readable `MPIC-AUDIT` JSON record per issuance decision, and in-process metrics on the coordinator.
+- MPIC external provider: `mpic_provider: open_mpic` delegates the whole corroboration to an [Open MPIC](https://open-mpic.org/)-compatible `POST /mpic` service (`mpic_provider_url`/`mpic_provider_api_key`/`mpic_provider_token`) instead of the built-in coordinator.
 
 ## Changes in 0.45.3
 

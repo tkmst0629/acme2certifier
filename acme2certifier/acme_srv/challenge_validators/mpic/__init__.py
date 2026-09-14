@@ -27,6 +27,7 @@ from .perspective import (
 from .quorum import QuorumPolicy, EnforcementMode, QuorumDecision
 from .coordinator import MpicCoordinator, MpicStats
 from .remote_agent import RemoteAgentPerspective, build_remote_perspectives
+from .external_provider import ExternalMpicProvider
 from .agent import MpicAgent, build_agent
 from .protocol import (
     MPIC_VALIDATE_PATH,
@@ -49,6 +50,7 @@ __all__ = [
     "MpicStats",
     "RemoteAgentPerspective",
     "build_remote_perspectives",
+    "ExternalMpicProvider",
     "MpicAgent",
     "build_agent",
     "MPIC_VALIDATE_PATH",

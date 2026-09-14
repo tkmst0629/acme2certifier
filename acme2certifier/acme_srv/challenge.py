@@ -93,6 +93,13 @@ class ChallengeConfiguration:
     mpic_client_cert: Optional[str] = None
     mpic_client_key: Optional[str] = None
     mpic_ca_bundle: Optional[str] = None
+    # method 3b: delegate to an external Open MPIC-compatible provider
+    mpic_provider: str = "self_hosted"  # "self_hosted" | "open_mpic"
+    mpic_provider_url: Optional[str] = None
+    mpic_provider_api_key: Optional[str] = None
+    mpic_provider_token: Optional[str] = None
+    mpic_provider_perspective_count: Optional[int] = None
+    mpic_provider_quorum_count: Optional[int] = None
 
 
 class DatabaseChallengeRepository(ChallengeRepository):
@@ -878,6 +885,46 @@ class Challenge:
             )
 
         self._load_mpic_perspectives(config_dic)
+        self._load_mpic_provider(config_dic)
+
+    def _load_mpic_provider(self, config_dic: ConfigParser):
+        """Load external (Open MPIC) provider configuration."""
+        provider = (
+            config_dic.get("Challenge", "mpic_provider", fallback="self_hosted")
+            .strip()
+            .lower()
+        )
+        if provider not in ("self_hosted", "open_mpic"):
+            self.logger.warning(
+                "Invalid mpic_provider %r, falling back to 'self_hosted'", provider
+            )
+            provider = "self_hosted"
+        self.config.mpic_provider = provider
+        if provider != "open_mpic":
+            return
+
+        self.config.mpic_provider_url = config_dic.get(
+            "Challenge", "mpic_provider_url", fallback=None
+        )
+        if not self.config.mpic_provider_url:
+            self.logger.warning(
+                "mpic_provider is 'open_mpic' but mpic_provider_url is not set"
+            )
+        self.config.mpic_provider_api_key = config_dic.get(
+            "Challenge", "mpic_provider_api_key", fallback=None
+        )
+        self.config.mpic_provider_token = config_dic.get(
+            "Challenge", "mpic_provider_token", fallback=None
+        )
+        for attr in ("mpic_provider_perspective_count", "mpic_provider_quorum_count"):
+            raw = config_dic.get("Challenge", attr, fallback=None)
+            if raw is not None:
+                try:
+                    setattr(self.config, attr, int(raw))
+                except Exception as err_:
+                    self.logger.warning(
+                        "Failed to parse %s from configuration: %s", attr, err_
+                    )
 
     def _load_mpic_perspectives(self, config_dic: ConfigParser):
         """Load the remote perspective list and mTLS credentials for MPIC."""
