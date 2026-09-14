@@ -27,8 +27,10 @@ from .perspective import (
 from .quorum import QuorumPolicy, EnforcementMode, QuorumDecision
 from .coordinator import MpicCoordinator
 from .remote_agent import RemoteAgentPerspective, build_remote_perspectives
+from .agent import MpicAgent, build_agent
 from .protocol import (
     MPIC_VALIDATE_PATH,
+    MPIC_CHALLENGE_TYPES,
     context_to_payload,
     payload_to_context,
     validation_result_to_payload,
@@ -46,7 +48,10 @@ __all__ = [
     "MpicCoordinator",
     "RemoteAgentPerspective",
     "build_remote_perspectives",
+    "MpicAgent",
+    "build_agent",
     "MPIC_VALIDATE_PATH",
+    "MPIC_CHALLENGE_TYPES",
     "context_to_payload",
     "payload_to_context",
     "validation_result_to_payload",

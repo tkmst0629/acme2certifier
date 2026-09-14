@@ -20,6 +20,10 @@ from ..base import ChallengeContext, ValidationResult
 
 MPIC_VALIDATE_PATH = "/mpic/validate"
 
+# Challenge types eligible for Multi-Perspective Issuance Corroboration.
+# MPIC applies to all domain-control-validation methods (BR 3.2.2.9).
+MPIC_CHALLENGE_TYPES = ("http-01", "dns-01", "tls-alpn-01")
+
 # Context fields carried to a remote perspective. Only JSON-serialisable fields
 # a validator needs to reproduce ``perform_validation`` are included.
 _CONTEXT_FIELDS = (

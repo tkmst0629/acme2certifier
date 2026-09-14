@@ -46,6 +46,7 @@ from .mpic import (
     build_remote_perspectives,
     PerspectiveMetadata,
     PerspectiveResult,
+    MPIC_CHALLENGE_TYPES,
 )
 
 __all__ = [
@@ -76,4 +77,5 @@ __all__ = [
     "build_remote_perspectives",
     "PerspectiveMetadata",
     "PerspectiveResult",
+    "MPIC_CHALLENGE_TYPES",
 ]

@@ -1,0 +1,38 @@
+# Example: three MPIC remote agents fronted by nginx (mutual TLS).
+#
+# Deploy the agents in geographically and topologically diverse locations
+# (different regions/providers, >= 500 km apart) to satisfy CA/Browser Forum
+# BR 3.2.2.9 -- running them all on one host is only useful for local testing.
+#
+# Each agent runs:
+#   a2c-mpic-agent            (the WSGI dev server; use uWSGI/gunicorn for prod)
+# behind:
+#   nginx                     (terminates mutual TLS, see nginx-agent.conf)
+#
+# The coordinator (main acme2certifier) references these agents via
+# `mpic_perspectives` in its own [Challenge] configuration.
+
+version: "3.8"
+
+services:
+  mpic-agent:
+    image: grindsa/acme2certifier:latest
+    command: ["a2c-mpic-agent", "--host", "127.0.0.1", "--port", "8080"]
+    environment:
+      ACME_SRV_CONFIGFILE: /opt/acme2certifier/agent.cfg
+      MPIC_AGENT_TOKEN: ${MPIC_AGENT_TOKEN:?set MPIC_AGENT_TOKEN}
+    volumes:
+      - ./agent.cfg:/opt/acme2certifier/agent.cfg:ro
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:stable
+    depends_on:
+      - mpic-agent
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./nginx-agent.conf:/etc/nginx/conf.d/mpic-agent.conf:ro
+      - ./tls:/etc/nginx/mpic:ro
+    restart: unless-stopped
+    network_mode: "service:mpic-agent"

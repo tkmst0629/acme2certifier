@@ -13,10 +13,14 @@
 > * PR2 — remote-agent client: `RemoteAgentPerspective` (mTLS HTTP client), the
 >   shared wire protocol (`protocol.py`), config parsing for `mpic_perspectives`
 >   and the mTLS credentials, and perspective-set construction.
+> * PR3 — remote-agent service: `MpicAgent` + `agent_wsgi` (`POST /mpic/validate`
+>   with bearer-token auth and optional client-cert-header enforcement), the
+>   `a2c-mpic-agent` dev runner, and a deployment example under
+>   [`examples/mpic/`](../examples/mpic).
 >
-> The agent *service* that answers `POST /mpic/validate` (PR3) is not yet
-> present. Configure `mpic_perspectives` pointing at agents once PR3 is
-> deployed; until then run in `monitor` mode.
+> End to end the coordinator now fans out over mTLS to agents that run the
+> standard validators from their own vantage points and applies the quorum.
+> Remaining: enforcement/observability hardening (PR4).
 
 ## 1. Goal
 
@@ -141,31 +145,57 @@ Encapsulates the BR table and phase rules:
 
 ## 5. Remote agent (method 3a)
 
-A minimal, stateless service that runs the *same* validator code against a
-ChallengeContext and returns the result. Two deployment shapes:
+A minimal, stateless service (`MpicAgent` + `agent_wsgi`) that runs the standard
+DCV validators against a forwarded `ChallengeContext` and returns the result. It
+registers only `http-01`/`dns-01`/`tls-alpn-01` and builds its registry with
+MPIC disabled, so it performs plain single-perspective validation and never fans
+out further. By default it validates from its own resolver
+(`use_local_resolver: True` strips any resolver/proxy pinned in the request), so
+each perspective genuinely queries from its own vantage point.
 
-- **a2c in "perspective mode"** — the existing image with a slim endpoint
-  `POST /mpic/validate` enabled and the ACME/CA surface disabled.
-- **standalone slim agent** — packages only `challenge_validators` + helpers.
-
-Contract (draft):
+Contract:
 
 ```
-POST /mpic/validate            (mTLS + bearer token)
+POST /mpic/validate            (mTLS at the proxy + bearer token)
 { "challenge_type": "dns-01",
   "context": { authorization_value, token, jwk_thumbprint,
-               authorization_type, dns_servers?, ... } }
+               authorization_type, ... } }
 ->
-{ "success": bool, "invalid": bool, "error_message": str|null,
-  "details": {...}, "perspective": { name, region, country, asn } }
+{ "success": bool, "invalid": bool,
+  "error_message": str|null, "details": {...} }
 ```
 
-Security: mutual TLS between coordinator and agents; short-lived bearer
-token; agents accept requests only from the coordinator; no persistence.
+Perspective identity (name/country/asn) is assigned by the coordinator from its
+own configuration, not taken from the response, so a compromised agent cannot
+claim to be a different perspective.
+
+Security: bearer token (constant-time compared; `[MpicAgent] token` or
+`MPIC_AGENT_TOKEN`) plus mutual TLS terminated at the reverse proxy, which
+verifies the coordinator client certificate and passes `X-SSL-Client-Verify`
+(enforced when `require_client_cert_header: True`). Agents keep no state.
+
+### 5.1 Running an agent
+
+```bash
+# dev server (behind an mTLS-terminating proxy in production)
+ACME_SRV_CONFIGFILE=agent.cfg MPIC_AGENT_TOKEN=... a2c-mpic-agent --port 8080
+```
+
+Or serve `acme2certifier.acme_srv.challenge_validators.mpic.agent_wsgi:application`
+from uWSGI/gunicorn. A ready-made `docker-compose` + nginx (mTLS) topology is in
+[`examples/mpic/`](../examples/mpic): `agent.cfg`, `nginx-agent.conf`,
+`docker-compose.yml`.
 
 Deployment: >= 3 agents (>= 5 from 2026-12-15) in distinct cloud
-regions/providers, each pair >= 500 km apart, network-diverse. A
-`docker-compose`/topology example ships with the agent.
+regions/providers, each pair >= 500 km apart, network-diverse.
+
+### 5.2 Agent configuration (`[MpicAgent]` section)
+
+| option | meaning | default |
+| ------ | ------- | ------- |
+| `token` | bearer secret the coordinator must present (`MPIC_AGENT_TOKEN` overrides) | *(none — all requests rejected)* |
+| `use_local_resolver` | ignore forwarded resolver/proxy and validate from the agent's own resolver | `True` |
+| `require_client_cert_header` | reject requests unless the proxy set `X-SSL-Client-Verify: SUCCESS` | `False` |
 
 ## 6. Configuration (acme_srv.yml, `Challenge` section — draft)
 

@@ -20,11 +20,8 @@ from .challenge_validators import (
     QuorumPolicy,
     EnforcementMode,
     build_remote_perspectives,
+    MPIC_CHALLENGE_TYPES,
 )
-
-# Challenge types eligible for Multi-Perspective Issuance Corroboration.
-# MPIC applies to all domain-control-validation methods (BR 3.2.2.9).
-MPIC_CHALLENGE_TYPES = ["http-01", "dns-01", "tls-alpn-01"]
 
 
 def create_challenge_validator_registry(
